@@ -148,6 +148,13 @@ tr:hover td{background:var(--bg3)}
 .form-acts{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
 /* Settle */
 .settle-info{background:var(--bg3);border-radius:var(--r);padding:11px;margin-bottom:11px;font-size:12px;line-height:1.8}
+/* Toast */
+#toast{position:fixed;bottom:24px;right:24px;z-index:999;display:flex;flex-direction:column;gap:8px;pointer-events:none}
+.toast-msg{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:10px 16px;font-size:12px;opacity:0;transform:translateY(8px);transition:all .25s;pointer-events:none;max-width:320px;line-height:1.5}
+.toast-msg.show{opacity:1;transform:translateY(0)}
+.toast-ok{border-color:var(--long);color:var(--long)}
+.toast-err{border-color:var(--short);color:var(--short)}
+.toast-info{border-color:var(--accent);color:var(--accent)}
 .settle-pnl{font-size:26px;font-weight:700;text-align:center;padding:10px 0}
 /* Divider */
 .divider{height:1px;background:var(--border);margin:4px 0 10px}
@@ -596,6 +603,9 @@ tr:hover td{background:var(--bg3)}
   </div>
 </div>
 
+<!-- Toast -->
+<div id="toast"></div>
+
 <!-- Notion 設定 Modal -->
 <div class="overlay" id="notionOv">
   <div class="modal" style="width:420px">
@@ -616,8 +626,10 @@ tr:hover td{background:var(--bg3)}
       平倉 → 自動更新「⚪️ 已平倉」＋損益金額<br>
       <span style="color:var(--yellow)">需先完成 Cloudflare Worker 設定（見說明）</span>
     </div>
+    <div id="ntTestResult" style="display:none;font-size:11px;padding:8px 10px;border-radius:6px;margin-bottom:8px;line-height:1.6"></div>
     <div class="form-acts">
       <button class="btn btn-cancel" onclick="closeNotionSettings()">取消</button>
+      <button class="btn btn-manual" onclick="testNotionConn()" id="ntTestBtn">測試連接</button>
       <button class="btn btn-add" onclick="saveNotionSettings()">儲存連接</button>
     </div>
   </div>
@@ -1461,6 +1473,19 @@ const NOTION_TARGET_MAP = {
   futures_micro:'微台期', call:'其他個股', put:'其他個股'
 };
 
+function showToast(msg, type='info', ms=4000) {
+  const box = document.getElementById('toast');
+  const el = document.createElement('div');
+  el.className = 'toast-msg toast-' + type;
+  el.textContent = msg;
+  box.appendChild(el);
+  requestAnimationFrame(() => el.classList.add('show'));
+  setTimeout(() => {
+    el.classList.remove('show');
+    setTimeout(() => el.remove(), 300);
+  }, ms);
+}
+
 async function _notionReq(method, path, body) {
   const proxy = notionProxy(); if (!proxy) return null;
   try {
@@ -1469,35 +1494,81 @@ async function _notionReq(method, path, body) {
       headers: {'Content-Type':'application/json'},
       body: body ? JSON.stringify(body) : undefined
     });
-    if (!res.ok) { console.error('Notion error', res.status, await res.text()); return null; }
+    if (!res.ok) {
+      const txt = await res.text();
+      console.error('Notion error', res.status, txt);
+      let msg = '';
+      try { msg = JSON.parse(txt).message || txt; } catch { msg = txt; }
+      return { __error: true, status: res.status, message: msg };
+    }
     return res.json();
-  } catch(e) { console.error('Notion fetch error', e); return null; }
+  } catch(e) { console.error('Notion fetch error', e); return { __error: true, message: e.message }; }
 }
 
 async function notionOpenTrade(pos) {
-  const dbId = notionDbId(); if (!notionProxy() || !dbId) return null;
+  const dbId = notionDbId();
+  if (!notionProxy() || !dbId) return null;
   const name = typeLabel(pos.type) + (pos.side==='long'?' 多':' 空') + ' ×' + pos.qty;
   const data = await _notionReq('POST', '/pages', {
     parent: {database_id: dbId},
     properties: {
       '交易名稱': {title:[{text:{content:name}}]},
       '交易日期': {date:{start:todayISO()}},
-      '狀態':     {select:{name:'🟢 持倉中'}},
+      '狀態':     {select:{name:'🟢持倉中'}},
       '標的':     {select:{name:NOTION_TARGET_MAP[pos.type]||'其他個股'}},
-      '方向':     {select:{name:pos.side==='long'?'📈 做多':'📉 做空'}},
+      '方向':     {select:{name:pos.side==='long'?'📈做多':'📉做空'}},
     }
   });
-  return data ? data.id : null;
+  if (!data || data.__error) {
+    showToast('Notion 開倉同步失敗 ' + (data ? `(${data.status}: ${data.message})` : ''), 'err', 8000);
+    return null;
+  }
+  showToast('✓ Notion 開倉記錄已建立', 'ok');
+  return data.id;
 }
 
 async function notionCloseTrade(pageId, pnl) {
   if (!notionProxy() || !pageId) return;
-  await _notionReq('PATCH', '/pages/'+pageId, {
+  const data = await _notionReq('PATCH', '/pages/'+pageId, {
     properties: {
-      '狀態':    {select:{name:'⚪️ 已平倉'}},
+      '狀態':    {select:{name:'⚪️已平倉'}},
       '最終損益':{number:pnl}
     }
   });
+  if (!data || data.__error) {
+    showToast('Notion 平倉更新失敗 ' + (data ? `(${data.status}: ${data.message})` : ''), 'err', 8000);
+  } else {
+    showToast('✓ Notion 已更新為平倉', 'ok');
+  }
+}
+
+async function testNotionConn() {
+  const btn = document.getElementById('ntTestBtn');
+  const res = document.getElementById('ntTestResult');
+  const proxy = document.getElementById('ntProxy').value.trim().replace(/\/+$/,'');
+  const dbId  = document.getElementById('ntDbId').value.trim();
+  if (!proxy) { res.style.display='block'; res.style.background='var(--short-bg)'; res.style.color='var(--short)'; res.textContent='請先填入 Worker URL'; return; }
+  btn.textContent='測試中…'; btn.disabled=true;
+  res.style.display='none';
+  try {
+    // 1. ping worker
+    const ping = await fetch(proxy + '/ping').then(r=>r.json()).catch(e=>({ok:false,err:e.message}));
+    if (!ping.ok) throw new Error('Worker 無回應：' + (ping.err||''));
+    if (!ping.tokenSet) throw new Error('Worker 已通，但 NOTION_TOKEN 未設定');
+    // 2. query database
+    if (!dbId) throw new Error('Worker OK，但未填 Database ID');
+    const db = await fetch(proxy + '/databases/' + dbId, {
+      headers: {'Content-Type':'application/json'}
+    }).then(r=>r.json()).catch(e=>({object:'error',message:e.message}));
+    if (db.object === 'error') throw new Error('資料庫查詢失敗：' + db.message);
+    const props = Object.keys(db.properties||{}).join(', ');
+    res.style.display='block'; res.style.background='var(--long-bg)'; res.style.color='var(--long)';
+    res.innerHTML = '✓ 連接成功！<br>資料庫：' + (db.title?.[0]?.plain_text||dbId) + '<br>欄位：' + props;
+  } catch(e) {
+    res.style.display='block'; res.style.background='var(--short-bg)'; res.style.color='var(--short)';
+    res.textContent = '✗ ' + e.message;
+  }
+  btn.textContent='測試連接'; btn.disabled=false;
 }
 
 function openNotionSettings() {

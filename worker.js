@@ -1,44 +1,49 @@
-// Cloudflare Worker — Notion API Proxy
-// 部署步驟：
-// 1. 登入 cloudflare.com → Workers & Pages → Create a Worker
-// 2. 貼上此檔案全部內容
-// 3. Settings → Variables → 新增環境變數 NOTION_TOKEN（貼上 Notion Integration Token）
-// 4. 部署後取得 Worker URL，貼入網頁的「Notion 聯動設定」
+// Cloudflare Worker — Notion API Proxy (Service Worker format)
+// 環境變數 NOTION_TOKEN 在此格式下為全域變數，直接讀取即可
 
 const NOTION_API = 'https://api.notion.com/v1';
-const NOTION_VER = '2022-06-28';
-
-const CORS_HEADERS = {
+const NOTION_VERSION = '2022-06-28';
+const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PATCH, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
-export default {
-  async fetch(request, env) {
-    // Handle CORS preflight
-    if (request.method === 'OPTIONS') {
-      return new Response(null, { headers: CORS_HEADERS });
-    }
+addEventListener('fetch', event => {
+  event.respondWith(handleRequest(event.request));
+});
 
-    const url = new URL(request.url);
-    const notionUrl = NOTION_API + url.pathname;
-    const body = request.method !== 'GET' ? await request.text() : undefined;
+async function handleRequest(request) {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { headers: CORS });
+  }
 
-    const res = await fetch(notionUrl, {
-      method: request.method,
-      headers: {
-        'Authorization': 'Bearer ' + env.NOTION_TOKEN,
-        'Content-Type': 'application/json',
-        'Notion-Version': NOTION_VER,
-      },
-      body,
-    });
+  const url = new URL(request.url);
 
-    const text = await res.text();
-    return new Response(text, {
-      status: res.status,
-      headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
-    });
-  },
-};
+  // 測試端點：確認 token 是否有讀到
+  if (url.pathname === '/ping') {
+    return new Response(JSON.stringify({
+      ok: true,
+      tokenSet: typeof NOTION_TOKEN !== 'undefined' && NOTION_TOKEN !== '',
+    }), { headers: { 'Content-Type': 'application/json', ...CORS } });
+  }
+
+  const notionUrl = NOTION_API + url.pathname;
+  const body = request.method !== 'GET' ? await request.text() : undefined;
+
+  const res = await fetch(notionUrl, {
+    method: request.method,
+    headers: {
+      'Authorization': 'Bearer ' + NOTION_TOKEN,
+      'Content-Type': 'application/json',
+      'Notion-Version': NOTION_VERSION,
+    },
+    body,
+  });
+
+  const text = await res.text();
+  return new Response(text, {
+    status: res.status,
+    headers: { 'Content-Type': 'application/json', ...CORS },
+  });
+}
