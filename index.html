@@ -1465,8 +1465,10 @@ function fmtDate(iso){ return iso?new Date(iso+'T00:00:00').toLocaleDateString('
 function typeLabel(t){ return {futures_taiex:'台指期',futures_mini:'小台指',futures_micro:'微台指',call:'買權Call',put:'賣權Put'}[t]||t; }
 
 // ── Notion 聯動 ───────────────────────────────────────────────────────────────
-function notionProxy() { return (localStorage.getItem('notionProxy')||'').replace(/\/+$/,''); }
-function notionDbId()  { return localStorage.getItem('notionDbId')||''; }
+const NOTION_PROXY_DEFAULT = 'https://flat-mountain-f70b.blue44571.workers.dev';
+const NOTION_DBID_DEFAULT  = 'bc54e0983fd5487193471633c535a3ed';
+function notionProxy() { return (localStorage.getItem('notionProxy') || NOTION_PROXY_DEFAULT).replace(/\/+$/,''); }
+function notionDbId()  { return localStorage.getItem('notionDbId')  || NOTION_DBID_DEFAULT; }
 
 const NOTION_TARGET_MAP = {
   futures_taiex:'台指期', futures_mini:'台指期',
@@ -1573,7 +1575,7 @@ async function testNotionConn() {
 
 function openNotionSettings() {
   document.getElementById('ntProxy').value = notionProxy();
-  document.getElementById('ntDbId').value  = notionDbId() || 'bc54e0983fd5487193471633c535a3ed';
+  document.getElementById('ntDbId').value  = notionDbId();
   document.getElementById('notionOv').classList.add('on');
 }
 function closeNotionSettings() { document.getElementById('notionOv').classList.remove('on'); }
