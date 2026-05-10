@@ -171,6 +171,12 @@ tr:hover td{background:var(--bg3)}
 ::-webkit-scrollbar{width:6px;height:6px}
 ::-webkit-scrollbar-track{background:var(--bg)}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+/* Mobile: iOS 防自動縮放 (font-size < 16px 會觸發) */
+@media(max-width:768px){
+  input,select,textarea{font-size:16px !important}
+  .fg input,.fg select,.fg textarea{font-size:16px !important}
+  .base-grp input,.si-inp input,.ai-inp input,.sc-price-inp{font-size:16px !important}
+}
 </style>
 </head>
 <body>
@@ -1500,7 +1506,7 @@ async function _notionReq(method, path, body) {
       const txt = await res.text();
       console.error('Notion error', res.status, txt);
       let msg = '';
-      try { msg = JSON.parse(txt).message || txt; } catch { msg = txt; }
+      try { msg = JSON.parse(txt).message || txt; } catch(e) { msg = txt; }
       return { __error: true, status: res.status, message: msg };
     }
     return res.json();
@@ -1565,7 +1571,8 @@ async function testNotionConn() {
     if (db.object === 'error') throw new Error('資料庫查詢失敗：' + db.message);
     const props = Object.keys(db.properties||{}).join(', ');
     res.style.display='block'; res.style.background='var(--long-bg)'; res.style.color='var(--long)';
-    res.innerHTML = '✓ 連接成功！<br>資料庫：' + (db.title?.[0]?.plain_text||dbId) + '<br>欄位：' + props;
+    const dbTitle = (db.title && db.title[0] && db.title[0].plain_text) || dbId;
+    res.innerHTML = '✓ 連接成功！<br>資料庫：' + dbTitle + '<br>欄位：' + props;
   } catch(e) {
     res.style.display='block'; res.style.background='var(--short-bg)'; res.style.color='var(--short)';
     res.textContent = '✗ ' + e.message;
