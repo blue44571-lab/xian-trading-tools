@@ -212,10 +212,6 @@
       style="width:100%;padding:13px;border-radius:12px;background:var(--gold);color:#1a1509;font-size:14px;font-weight:700;border:none;cursor:pointer;font-family:inherit;margin-bottom:16px;">
       解鎖
     </button>
-    <button id="reset-btn" onclick="confirmReset()"
-      style="display:none;width:100%;padding:8px;border-radius:10px;background:transparent;border:1px solid rgba(201,92,78,0.18);color:var(--red);font-size:12px;cursor:pointer;font-family:inherit;">
-      忘記密碼（清除全部資料重設）
-    </button>
   </div>
 </div>
 
@@ -329,10 +325,15 @@
 </div>
 
 <!-- BOTTOM NAV -->
-<div style="position:fixed;bottom:0;left:0;right:0;display:flex;justify-content:center;padding:16px;background:linear-gradient(to top,var(--bg) 55%,transparent);pointer-events:none;">
+<div style="position:fixed;bottom:0;left:0;right:0;display:flex;justify-content:center;align-items:center;gap:12px;padding:16px;background:linear-gradient(to top,var(--bg) 55%,transparent);pointer-events:none;">
   <button onclick="openSheet('journal')"
     style="pointer-events:auto;display:flex;align-items:center;gap:8px;padding:10px 22px;border-radius:999px;background:var(--surface);border:1px solid var(--border);font-size:13px;color:var(--dim);cursor:pointer;font-family:inherit;">
     📖 查看日誌
+  </button>
+  <button onclick="confirmReset()"
+    style="pointer-events:auto;padding:10px 16px;border-radius:999px;background:transparent;border:1px solid rgba(201,92,78,0.18);font-size:12px;color:rgba(201,92,78,0.5);cursor:pointer;font-family:inherit;"
+    title="清除資料並重設密碼">
+    ⚙
   </button>
 </div>
 
@@ -867,8 +868,6 @@ function confirmReset(){
     $('lock-sub').textContent='歡迎！請設定您的密碼（至少 4 個字元）';
     $('lock-btn').textContent='設定密碼';
     $('confirm-wrap').style.display='';
-  } else {
-    $('reset-btn').style.display='';
   }
   $('pwd1').focus();
 })();
