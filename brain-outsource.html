@@ -126,7 +126,24 @@
     .cs-btn.on{border-color:var(--gold);background:rgba(212,168,67,0.08);color:var(--gold);}
     /* journal */
     .jd{font-size:11px;color:var(--dim);letter-spacing:0.04em;padding:16px 0 8px;border-bottom:1px solid var(--border);margin-bottom:8px;}
-    .ji{display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.03);}
+    .ji{display:flex;align-items:flex-start;gap:10px;padding:10px 4px;}
+    /* swipe rows */
+    .swipe-row{position:relative;overflow:hidden;border-radius:12px;margin-bottom:8px;touch-action:pan-y;}
+    .swipe-row-j{position:relative;overflow:hidden;border-bottom:1px solid rgba(255,255,255,0.03);}
+    .swipe-actions{position:absolute;right:0;top:0;bottom:0;display:flex;align-items:stretch;width:136px;}
+    .sw-edit{
+      flex:1;background:rgba(212,168,67,0.18);color:var(--gold);
+      border:none;cursor:pointer;font-size:11px;font-family:inherit;
+      display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+    }
+    .sw-del{
+      flex:1;background:#c95c4e;color:#fff;
+      border:none;cursor:pointer;font-size:11px;font-family:inherit;
+      display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+    }
+    .swipe-row .sw-del{border-radius:0 12px 12px 0;}
+    .swipe-content{position:relative;will-change:transform;background:var(--surface);}
+    .swipe-content-j{position:relative;will-change:transform;background:#1a1928;}
     /* micro toast */
     #micro-toast{
       position:fixed;bottom:80px;left:50%;
@@ -262,22 +279,8 @@
   <!-- Submit -->
   <button onclick="submitInput()"
     style="width:100%;padding:12px;border-radius:12px;background:rgba(212,168,67,0.08);border:1px solid rgba(212,168,67,0.22);color:var(--gold);font-size:13px;font-weight:500;cursor:pointer;font-family:inherit;letter-spacing:0.02em;margin-bottom:14px;transition:all 0.15s;">
-    送出 → 確認修訂
+    送出
   </button>
-
-  <!-- CONFIRM CARD -->
-  <div id="confirm-card">
-    <div style="font-size:11px;color:var(--dim);margin-bottom:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-      <span>確認這條要存入嗎？</span>
-      <span id="c-imp"></span>
-      <span id="c-dl"></span>
-    </div>
-    <div id="c-text" style="font-size:16px;color:var(--text);line-height:1.65;white-space:pre-wrap;word-break:break-word;margin-bottom:14px;"></div>
-    <div style="display:flex;gap:10px;">
-      <button class="gold-btn" style="flex:1;" onclick="confirmAdd()">✓ 確認存入</button>
-      <button class="ghost-btn" onclick="cancelConfirm()">← 修改</button>
-    </div>
-  </div>
 
   <!-- TASK LIST -->
   <div id="task-list"></div>
@@ -333,7 +336,7 @@
 <script>
 // ── DATA ──
 const TK = 'bov2-tasks', DK = 'bov2-done';
-let tasks=[], done=[], pending=null, curImp='normal', dlOn=false;
+let tasks=[], done=[], curImp='normal', dlOn=false;
 
 function load(){
   try{tasks=JSON.parse(localStorage.getItem(TK)||'[]');}catch{tasks=[];}
@@ -386,12 +389,23 @@ function renderInbox(){
   if(!tasks.length){el.innerHTML=`<div style="text-align:center;padding:32px;color:var(--dim);font-size:13px;">收件匣是空的 ✨</div>`;return;}
   el.innerHTML='';
   tasks.forEach(t=>{
-    const item=document.createElement('div');
-    item.className='ii';item.dataset.id=t.id;
+    const row=document.createElement('div');
+    row.className='swipe-row';
+
+    // action buttons (behind)
+    row.innerHTML=`
+      <div class="swipe-actions">
+        <button class="sw-edit" onclick="editInbox('${t.id}')">✎<br>編輯</button>
+        <button class="sw-del" onclick="deleteInbox('${t.id}')">🗑<br>刪除</button>
+      </div>`;
+
+    // content (on top, slides)
+    const content=document.createElement('div');
+    content.className='swipe-content ii';content.dataset.id=t.id;
     const impH=t.imp==='high'?`<span class="ib hi">‼ 重要</span>`:(t.imp==='low'?`<span class="ib lo">備忘</span>`:'');
     const dlH=t.dl?`<span style="font-size:11px;color:var(--dim)">📅 ${t.dl}</span>`:'';
-    const catLabel=t.cat?` <span class="cb ${t.cat}">${t.cat==='r'?'🚀 火箭':t.cat==='e'?'🛒 雜務':'⚡ 微型'}</span>`:'';
-    item.innerHTML=`
+    const catLabel=t.cat?`<span class="cb ${t.cat}">${t.cat==='r'?'🚀 火箭':t.cat==='e'?'🛒 雜務':'⚡ 微型'}</span>`:'';
+    content.innerHTML=`
       <div style="display:flex;align-items:flex-start;gap:12px;">
         <button class="chk" style="flex-shrink:0;margin-top:1px;" onclick="completeFromInbox('${t.id}')">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
@@ -403,8 +417,6 @@ function renderInbox(){
             <button onclick="toggleExpand('${t.id}')" class="pill-btn" style="padding:2px 10px;font-size:11px;">
               ${t.cat?'✎ 改分類':'+ 分類'}
             </button>
-            <button onclick="editInbox('${t.id}')" class="pill-btn" style="padding:2px 10px;font-size:11px;">✎ 編輯</button>
-            <button onclick="deleteInbox('${t.id}')" class="pill-btn" style="padding:2px 10px;font-size:11px;color:var(--red);border-color:rgba(201,92,78,0.2);">🗑 刪除</button>
           </div>
         </div>
       </div>
@@ -416,7 +428,9 @@ function renderInbox(){
           <button class="cs-btn${t.cat==='m'?' on':''}" onclick="setCat('${t.id}','m')">⚡ 微型小步<br><span style="font-size:10px;opacity:0.6;">2分鐘・立刻</span></button>
         </div>
       </div>`;
-    el.appendChild(item);
+    row.appendChild(content);
+    el.appendChild(row);
+    initSwipe(content, 136);
   });
 }
 
@@ -439,21 +453,95 @@ function renderJournal(){
       const row=document.createElement('div');row.className='ji';
       const catB=t.cat?`<span class="cb ${t.cat}" style="font-size:10px;">${t.cat==='r'?'🚀':t.cat==='e'?'🛒':'⚡'}</span>`:'';
       const tm=new Date(t.completedAt).toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'});
-      row.innerHTML=`
+      // wrap in swipe row
+      const swRow=document.createElement('div');
+      swRow.className='swipe-row-j';
+      swRow.innerHTML=`<div class="swipe-actions" style="border-radius:0;">
+        <button class="sw-edit" onclick="editJournal('${t.id}')">✎<br>編輯</button>
+        <button class="sw-del" onclick="deleteJournal('${t.id}')">🗑<br>刪除</button>
+      </div>`;
+      const swContent=document.createElement('div');
+      swContent.className='swipe-content-j ji';swContent.dataset.id=t.id;
+      swContent.innerHTML=`
         <span style="color:var(--green);flex-shrink:0;margin-top:2px;">✓</span>
         <div style="flex:1;min-width:0;">
           <div id="jtxt-${t.id}" style="font-size:14px;color:var(--text);line-height:1.55;word-break:break-word;">${esc(t.text)}</div>
           <div style="display:flex;gap:8px;align-items:center;margin-top:4px;flex-wrap:wrap;">
-            ${catB}
-            <span style="font-size:11px;color:var(--dim);">${tm}</span>
-            <button onclick="editJournal('${t.id}')" class="pill-btn" style="padding:1px 8px;font-size:11px;">✎</button>
-            <button onclick="deleteJournal('${t.id}')" class="pill-btn" style="padding:1px 8px;font-size:11px;color:var(--red);border-color:rgba(201,92,78,0.2);">🗑</button>
+            ${catB}<span style="font-size:11px;color:var(--dim);">${tm}</span>
           </div>
         </div>`;
-      el.appendChild(row);
+      swRow.appendChild(swContent);
+      el.appendChild(swRow);
+      initSwipe(swContent, 136);
     });
   });
 }
+
+// ── SWIPE ──
+const SNAP=136;
+let _activeSwipe=null, _drag=null;
+
+function initSwipe(el,snap){
+  el._sx=0;
+  // touch
+  el.addEventListener('touchstart',e=>{
+    if(_activeSwipe&&_activeSwipe!==el)closeSwipe(_activeSwipe);
+    _drag={el,sx:e.touches[0].clientX,sy:e.touches[0].clientY,initX:el._sx,dir:null};
+    el.style.transition='none';
+  },{passive:true});
+  el.addEventListener('touchmove',e=>{
+    if(!_drag||_drag.el!==el)return;
+    const dx=e.touches[0].clientX-_drag.sx;
+    const dy=e.touches[0].clientY-_drag.sy;
+    if(!_drag.dir){
+      if(Math.abs(dy)>Math.abs(dx)){_drag=null;return;}
+      _drag.dir='h';
+    }
+    el._sx=Math.max(-snap,Math.min(0,_drag.initX+dx));
+    el.style.transform=`translateX(${el._sx}px)`;
+  },{passive:true});
+  el.addEventListener('touchend',e=>{
+    if(!_drag||_drag.el!==el)return;
+    const final=_drag.initX+(e.changedTouches[0].clientX-_drag.sx);
+    _drag=null;
+    _snapSwipe(el,snap,final);
+  });
+  // mouse (desktop)
+  el.addEventListener('mousedown',e=>{
+    if(e.button!==0||e.target.closest('button'))return;
+    if(_activeSwipe&&_activeSwipe!==el)closeSwipe(_activeSwipe);
+    _drag={el,sx:e.clientX,initX:el._sx,dir:'h'};
+    el.style.transition='none';
+    e.preventDefault();
+  });
+}
+function _snapSwipe(el,snap,finalX){
+  el.style.transition='transform 0.22s ease';
+  if(finalX<-50){el._sx=-snap;el.style.transform=`translateX(${-snap}px)`;_activeSwipe=el;}
+  else{el._sx=0;el.style.transform='';if(_activeSwipe===el)_activeSwipe=null;}
+}
+function closeSwipe(el){
+  if(!el)return;
+  el._sx=0;el.style.transition='transform 0.22s ease';el.style.transform='';
+  if(_activeSwipe===el)_activeSwipe=null;
+}
+// global mouse handlers
+document.addEventListener('mousemove',e=>{
+  if(!_drag)return;
+  const {el,sx,initX}=_drag;
+  el._sx=Math.max(-SNAP,Math.min(0,initX+(e.clientX-sx)));
+  el.style.transform=`translateX(${el._sx}px)`;
+});
+document.addEventListener('mouseup',e=>{
+  if(!_drag)return;
+  const {el,sx,initX}=_drag;_drag=null;
+  _snapSwipe(el,SNAP,initX+(e.clientX-sx));
+});
+// tap outside → close active swipe
+document.addEventListener('click',e=>{
+  if(_activeSwipe&&!e.target.closest('.swipe-content')&&!e.target.closest('.swipe-content-j')&&!e.target.closest('.swipe-actions'))
+    closeSwipe(_activeSwipe);
+});
 
 // ── INBOX EDIT / DELETE ──
 function deleteInbox(id){
@@ -461,6 +549,9 @@ function deleteInbox(id){
   save();renderMain();renderInbox();
 }
 function editInbox(id){
+  // close swipe first
+  const content=document.querySelector(`.swipe-content.ii[data-id="${id}"]`);
+  if(content)closeSwipe(content);
   const wrap=document.getElementById(`itxt-${id}`);
   const t=tasks.find(x=>x.id===id);
   if(!wrap||!t)return;
@@ -476,11 +567,9 @@ function editInbox(id){
   ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length);
 }
 function saveInboxEdit(id){
-  const ta=document.getElementById(`iedit-${id}`);
-  if(!ta)return;
+  const ta=document.getElementById(`iedit-${id}`);if(!ta)return;
   const v=ta.value.trim();if(!v)return;
-  const t=tasks.find(x=>x.id===id);
-  if(t){t.text=v;save();}
+  const t=tasks.find(x=>x.id===id);if(t){t.text=v;save();}
   renderInbox();renderMain();
 }
 
@@ -490,6 +579,8 @@ function deleteJournal(id){
   save();renderJournal();
 }
 function editJournal(id){
+  const content=document.querySelector(`.swipe-content-j[data-id="${id}"]`);
+  if(content)closeSwipe(content);
   const wrap=document.getElementById(`jtxt-${id}`);
   const t=done.find(x=>x.id===id);
   if(!wrap||!t)return;
@@ -505,11 +596,9 @@ function editJournal(id){
   ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length);
 }
 function saveJournalEdit(id){
-  const ta=document.getElementById(`jedit-${id}`);
-  if(!ta)return;
+  const ta=document.getElementById(`jedit-${id}`);if(!ta)return;
   const v=ta.value.trim();if(!v)return;
-  const t=done.find(x=>x.id===id);
-  if(t){t.text=v;save();}
+  const t=done.find(x=>x.id===id);if(t){t.text=v;save();}
   renderJournal();
 }
 
@@ -559,28 +648,13 @@ function submitInput(){
   const text=$('brain-input').value.trim();
   if(!text){$('brain-input').focus();return;}
   const dl=$('dl-input').value||null;
-  pending={text,imp:curImp,dl};
-  $('c-text').textContent=text;
-  $('c-imp').innerHTML=curImp==='high'?`<span class="ib hi">‼ 重要</span>`:curImp==='low'?`<span class="ib lo">備忘</span>`:'';
-  $('c-dl').innerHTML=dl?`<span style="font-size:11px;color:var(--dim)">📅 ${dl}</span>`:'';
-  $('confirm-card').style.display='block';
-  $('brain-input').blur();
-}
-function confirmAdd(){
-  if(!pending)return;
-  tasks.push({id:uid(),text:pending.text,imp:pending.imp,dl:pending.dl,cat:null,createdAt:Date.now()});
+  tasks.push({id:uid(),text,imp:curImp,dl,cat:null,createdAt:Date.now()});
   save();renderMain();
   $('brain-input').value='';
   if(dlOn)toggleDl();
   document.querySelectorAll('.imp-btn').forEach(b=>b.classList.remove('on'));
   document.querySelector('.imp-btn[data-v="normal"]').classList.add('on');
   curImp='normal';
-  $('confirm-card').style.display='none';pending=null;
-  $('brain-input').focus();
-}
-function cancelConfirm(){
-  if(pending)$('brain-input').value=pending.text;
-  $('confirm-card').style.display='none';pending=null;
   $('brain-input').focus();
 }
 
