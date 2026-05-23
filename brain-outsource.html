@@ -401,20 +401,30 @@ async function _saveAsync(){
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
 function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML;}
 
-// ── 排序：今天截止 → 已過期 → 未來截止 → 無截止 ──
+// ── 顯示優先序：今天截止 → 1個火箭任務 → 雜務任務 → 其他 ──
 function getSortedTasks(){
   const today=new Date().toISOString().slice(0,10);
   const now=new Date();
-  function rank(t){
-    if(!t.dl)return 30;
-    if(t.dl===today)return 0;
-    if(new Date(t.dl+'T00:00:00')<now)return 10;
-    return 20;
-  }
-  return [...tasks].sort((a,b)=>{
-    const dr=rank(a)-rank(b);
-    return dr!==0?dr:a.createdAt-b.createdAt;
+  const byAge=(a,b)=>a.createdAt-b.createdAt;
+
+  // 1. 今天截止（不限類別）
+  const g1=tasks.filter(t=>t.dl===today).sort(byAge);
+
+  // 2. 最多 1 個火箭任務（今天以外）
+  const g2=tasks.filter(t=>t.cat==='r'&&t.dl!==today).sort(byAge).slice(0,1);
+
+  // 3. 雜務任務（今天以外）
+  const g3=tasks.filter(t=>t.cat==='e'&&t.dl!==today).sort(byAge);
+
+  // 4. 其他（過期優先，再依建立時間）
+  const shown=new Set([...g1,...g2,...g3].map(t=>t.id));
+  const g4=tasks.filter(t=>!shown.has(t.id)).sort((a,b)=>{
+    const aOv=a.dl&&new Date(a.dl+'T00:00:00')<now?0:1;
+    const bOv=b.dl&&new Date(b.dl+'T00:00:00')<now?0:1;
+    return aOv!==bOv?aOv-bOv:a.createdAt-b.createdAt;
   });
+
+  return [...g1,...g2,...g3,...g4];
 }
 
 // ── RENDER MAIN ──
