@@ -84,6 +84,8 @@
       animation:cIn 0.35s cubic-bezier(0.16,1,0.3,1);
     }
     .task-card.out{animation:cOut 0.45s ease-in forwards;overflow:hidden;pointer-events:none;}
+    .task-card.due-today{border-color:rgba(212,168,67,0.4);box-shadow:0 0 0 1px rgba(212,168,67,0.1) inset;}
+    .task-card.overdue{border-color:rgba(201,92,78,0.35);}
     .chk{
       width:36px;height:36px;border-radius:50%;flex-shrink:0;
       border:1.5px solid rgba(255,255,255,0.13);background:transparent;
@@ -399,6 +401,22 @@ async function _saveAsync(){
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
 function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML;}
 
+// ── 排序：今天截止 → 已過期 → 未來截止 → 無截止 ──
+function getSortedTasks(){
+  const today=new Date().toISOString().slice(0,10);
+  const now=new Date();
+  function rank(t){
+    if(!t.dl)return 30;
+    if(t.dl===today)return 0;
+    if(new Date(t.dl+'T00:00:00')<now)return 10;
+    return 20;
+  }
+  return [...tasks].sort((a,b)=>{
+    const dr=rank(a)-rank(b);
+    return dr!==0?dr:a.createdAt-b.createdAt;
+  });
+}
+
 // ── RENDER MAIN ──
 function renderMain(){
   const lEl=$('task-list'), bEl=$('inbox-bar'), eEl=$('empty'), ibT=$('ib-text');
@@ -406,24 +424,46 @@ function renderMain(){
   if(!tasks.length){eEl.style.display='';bEl.style.display='none';return;}
   eEl.style.display='none';
 
-  tasks.slice(0,3).forEach(t=>{
+  const today=new Date().toISOString().slice(0,10);
+  const now=new Date();
+
+  getSortedTasks().slice(0,3).forEach(t=>{
     const c=document.createElement('div');
-    c.className='task-card';c.dataset.id=t.id;
+    const isToday=t.dl===today;
+    const isOverdue=t.dl&&new Date(t.dl+'T00:00:00')<now&&!isToday;
+    c.className='task-card'+(isToday?' due-today':isOverdue?' overdue':'');
+    c.dataset.id=t.id;
+
     let badges='';
     if(t.imp==='high') badges+=`<span class="ib hi">‼ 重要</span> `;
     if(t.imp==='low')  badges+=`<span class="ib lo">備忘</span> `;
     if(t.cat==='r') badges+=`<span class="cb r">🚀 火箭</span> `;
     if(t.cat==='e') badges+=`<span class="cb e">🛒 雜務</span> `;
     if(t.cat==='m') badges+=`<span class="cb m">⚡ 微型</span> `;
-    let dl='';
-    if(t.dl){const ov=new Date(t.dl)<new Date();dl=`<span style="font-size:11px;color:${ov?'var(--red)':'var(--dim)'}">${ov?'⚠ 已過期 ':'📅 '}${t.dl}</span>`;}
+
+    // 截止日顯示（可點擊修改）
+    let dlTag='';
+    if(t.dl){
+      const color=isOverdue?'var(--red)':isToday?'var(--gold)':'var(--dim)';
+      const label=isOverdue?`⚠ 已過期 ${t.dl}`:isToday?`⏰ 今天截止 ${t.dl}`:`📅 ${t.dl}`;
+      dlTag=`<span id="cdltap-${t.id}" onclick="toggleCardDl('${t.id}')" style="cursor:pointer;font-size:11px;color:${color};text-decoration:underline dotted;">${label}</span>`;
+    } else {
+      dlTag=`<span id="cdltap-${t.id}" onclick="toggleCardDl('${t.id}')" style="cursor:pointer;font-size:11px;color:rgba(122,117,144,0.45);">+ 截止日</span>`;
+    }
+
     c.innerHTML=`
       <button class="chk" data-id="${t.id}">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
       </button>
       <div style="flex:1;min-width:0;">
         <div style="font-size:16px;color:var(--text);line-height:1.65;white-space:pre-wrap;word-break:break-word;">${esc(t.text)}</div>
-        ${badges||dl?`<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px;">${badges}${dl}</div>`:''}
+        <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px;">${badges}${dlTag}</div>
+        <div id="cdl-${t.id}" style="display:none;align-items:center;gap:8px;margin-top:8px;">
+          <input type="date" value="${t.dl||''}"
+            onchange="setCardDl('${t.id}',this.value)"
+            style="font-size:13px;padding:5px 10px;border-radius:8px;background:var(--surface2);border:1px solid rgba(212,168,67,0.3);color:var(--text);font-family:inherit;outline:none;">
+          ${t.dl?`<button onclick="setCardDl('${t.id}','')" style="font-size:11px;color:var(--red);background:transparent;border:1px solid rgba(201,92,78,0.2);border-radius:6px;padding:4px 8px;cursor:pointer;font-family:inherit;">清除</button>`:''}
+        </div>
       </div>`;
     lEl.appendChild(c);
   });
@@ -431,6 +471,18 @@ function renderMain(){
   const h=Math.max(0,tasks.length-3);
   ibT.textContent=h>0?`還有 ${h} 件躺在收件匣`:`共 ${tasks.length} 件・打開收件匣`;
   bEl.style.display='';
+}
+
+// 截止日內嵌編輯
+function toggleCardDl(id){
+  const el=$(`cdl-${id}`);if(!el)return;
+  const open=el.style.display!=='none';
+  el.style.display=open?'none':'flex';
+  if(!open)el.querySelector('input').focus();
+}
+function setCardDl(id,date){
+  const t=tasks.find(x=>x.id===id);if(!t)return;
+  t.dl=date||null;save();renderMain();
 }
 
 // ── RENDER INBOX ──
