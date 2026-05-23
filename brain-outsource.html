@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🧠 大腦外包系統</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'PingFang TC', 'Noto Sans TC', system-ui, sans-serif;
+    }
+
+    /* ── 進場動畫 ── */
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(12px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── 完成動畫：先滑出，再縮高，為後面的任務騰出空間 ── */
+    @keyframes slideOut {
+      0%   {
+        opacity: 1;
+        transform: translateX(0) scale(1);
+        max-height: 400px;
+        margin-bottom: 12px;
+        padding-top: 18px;
+        padding-bottom: 18px;
+      }
+      45%  {
+        opacity: 0;
+        transform: translateX(-28px) scale(0.97);
+        max-height: 400px;
+        margin-bottom: 12px;
+        padding-top: 18px;
+        padding-bottom: 18px;
+      }
+      100% {
+        opacity: 0;
+        transform: translateX(-28px) scale(0.97);
+        max-height: 0;
+        margin-bottom: 0;
+        padding-top: 0;
+        padding-bottom: 0;
+      }
+    }
+
+    .task-card {
+      margin-bottom: 12px;
+      animation: slideIn 0.38s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .task-card.completing {
+      animation: slideOut 0.48s ease-in forwards;
+      overflow: hidden;
+      pointer-events: none;
+    }
+
+    /* ── 輸入框 focus 光圈 ── */
+    #brain-input:focus {
+      outline: none;
+      border-color: #38bdf8 !important;
+      box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.12);
+    }
+
+    /* ── 輸入框底部提示文字閃爍 ── */
+    @keyframes blink {
+      0%, 100% { opacity: 0.3; }
+      50%       { opacity: 0.7; }
+    }
+    .hint-blink { animation: blink 2.6s ease-in-out infinite; }
+
+    /* ── 完成按鈕 ── */
+    .check-btn {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      border: 2px solid #475569;
+      background: transparent;
+      cursor: pointer;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #475569;
+      transition: border-color 0.15s, background 0.15s, color 0.15s, transform 0.15s;
+    }
+    .check-btn:hover {
+      border-color: #4ade80;
+      background: rgba(74, 222, 128, 0.09);
+      color: #4ade80;
+      transform: scale(1.12);
+    }
+    .check-btn:active {
+      transform: scale(0.95);
+    }
+
+    /* ── 收件匣計數淡入 ── */
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to   { opacity: 1; }
+    }
+    #inbox-count { animation: fadeIn 0.3s ease; }
+  </style>
+</head>
+
+<body class="min-h-screen bg-slate-900 text-slate-200">
+
+  <div class="max-w-[560px] mx-auto px-5 py-14 flex flex-col">
+
+    <!-- ── 標題區 ── -->
+    <header class="text-center mb-11">
+      <div class="text-xl font-bold tracking-tight text-slate-100">🧠 大腦外包系統</div>
+      <div class="text-xs text-slate-500 mt-2 leading-relaxed">
+        把念頭丟出來，讓它等你，你去休息
+      </div>
+    </header>
+
+    <!-- ── 輸入區 ── -->
+    <div class="relative mb-9">
+      <textarea
+        id="brain-input"
+        rows="3"
+        class="w-full bg-slate-800 border border-slate-700 rounded-2xl px-5 py-[18px] text-sm text-slate-100 placeholder-slate-600 resize-none leading-relaxed transition-all duration-200"
+        style="font-family: inherit;"
+        placeholder="現在大腦想到什麼？打完字按 Enter 外包出來..."
+      ></textarea>
+      <span class="hint-blink absolute bottom-3.5 right-4 text-[11px] text-slate-600 select-none pointer-events-none">
+        Shift + Enter 換行 &nbsp;·&nbsp; Enter ↵ 送出
+      </span>
+    </div>
+
+    <!-- ── 任務清單 ── -->
+    <div id="task-list"></div>
+
+    <!-- ── 隱藏任務計數 ── -->
+    <p id="inbox-count" class="text-center text-xs text-slate-600 mt-0.5" style="display:none"></p>
+
+    <!-- ── 空狀態 ── -->
+    <div id="empty-state" class="text-center py-16" style="display:none">
+      <div class="text-5xl mb-4 opacity-80">✨</div>
+      <div class="text-sm text-slate-500 leading-relaxed">
+        大腦清空了！<br>現在的你很輕盈。
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    // ── 常數 ──
+    const STORAGE_KEY  = 'brain-outsource-v1';
+    const MAX_VISIBLE  = 3;
+
+    // ── 狀態 ──
+    let tasks = [];
+
+    // ── 工具函數 ──
+    function loadTasks() {
+      try { tasks = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); }
+      catch { tasks = []; }
+    }
+
+    function saveTasks() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+    }
+
+    function genId() {
+      return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // ── 渲染整個清單 ──
+    function render() {
+      const listEl   = document.getElementById('task-list');
+      const countEl  = document.getElementById('inbox-count');
+      const emptyEl  = document.getElementById('empty-state');
+
+      listEl.innerHTML = '';
+
+      if (!tasks.length) {
+        emptyEl.style.display = '';
+        countEl.style.display = 'none';
+        return;
+      }
+
+      emptyEl.style.display = 'none';
+
+      // 只顯示前 MAX_VISIBLE 個
+      tasks.slice(0, MAX_VISIBLE).forEach(task => {
+        const card = document.createElement('div');
+        card.className = 'task-card bg-slate-800 border border-slate-700/60 rounded-2xl px-5 flex items-start gap-4';
+        card.style.paddingTop    = '18px';
+        card.style.paddingBottom = '18px';
+        card.dataset.id = task.id;
+
+        card.innerHTML = `
+          <button class="check-btn mt-0.5" data-id="${task.id}" title="完成這件事 ✓">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2.8"
+              stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+          </button>
+          <div class="flex-1 text-sm text-slate-300 leading-relaxed break-words whitespace-pre-wrap" style="padding-top:11px">
+            ${escapeHtml(task.text)}
+          </div>
+        `;
+
+        listEl.appendChild(card);
+      });
+
+      // 隱藏計數
+      const hidden = Math.max(0, tasks.length - MAX_VISIBLE);
+      if (hidden > 0) {
+        countEl.textContent = `📥 還有 ${hidden} 件事情躺在收件匣中...`;
+        countEl.style.display = '';
+      } else {
+        countEl.style.display = 'none';
+      }
+    }
+
+    // ── 新增任務 ──
+    function addTask(text) {
+      const trimmed = text.trim();
+      if (!trimmed) return;
+      tasks.push({ id: genId(), text: trimmed, createdAt: Date.now() });
+      saveTasks();
+      render();
+    }
+
+    // ── 完成任務（帶動畫） ──
+    function completeTask(id) {
+      const card = document.querySelector(`.task-card[data-id="${id}"]`);
+      if (!card || card.classList.contains('completing')) return;
+
+      card.classList.add('completing');
+
+      setTimeout(() => {
+        tasks = tasks.filter(t => t.id !== id);
+        saveTasks();
+        render();
+      }, 480);
+    }
+
+    // ── 事件：勾選完成（事件委派） ──
+    document.getElementById('task-list').addEventListener('click', e => {
+      const btn = e.target.closest('.check-btn');
+      if (btn) completeTask(btn.dataset.id);
+    });
+
+    // ── 事件：Enter 送出 ──
+    document.getElementById('brain-input').addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        const val = e.target.value;
+        addTask(val);
+        e.target.value = '';
+      }
+    });
+
+    // ── 初始化 ──
+    loadTasks();
+    render();
+    document.getElementById('brain-input').focus();
+  </script>
+
+</body>
+</html>
