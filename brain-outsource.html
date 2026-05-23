@@ -616,8 +616,34 @@ function bell(){
 // ── UTIL ──
 function $(id){return document.getElementById(id);}
 
+// ── MIGRATE v1 → v2 ──
+function migrateV1(){
+  const OLD='brain-outsource-v1';
+  const raw=localStorage.getItem(OLD);
+  if(!raw)return;
+  try{
+    const old=JSON.parse(raw)||[];
+    if(!old.length)return;
+    // 只在 v2 是空的時才搬（避免覆蓋新資料）
+    const existing=JSON.parse(localStorage.getItem(TK)||'[]');
+    if(!existing.length){
+      // 補上 v2 需要的欄位
+      tasks=old.map(t=>({
+        id:t.id||uid(),
+        text:t.text||'',
+        imp:t.importance||'normal',
+        dl:t.deadline||null,
+        cat:t.category||null,
+        createdAt:t.createdAt||t.at||Date.now()
+      }));
+      save();
+      localStorage.removeItem(OLD);
+    }
+  }catch(e){}
+}
+
 // ── INIT ──
-load();renderMain();updateT();
+migrateV1();load();renderMain();updateT();
 $('brain-input').focus();
 </script>
 </body>
