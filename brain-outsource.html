@@ -397,12 +397,14 @@ function renderInbox(){
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
         </button>
         <div style="flex:1;min-width:0;">
-          <div style="font-size:14px;color:var(--text);line-height:1.6;white-space:pre-wrap;word-break:break-word;">${esc(t.text)}</div>
+          <div id="itxt-${t.id}" style="font-size:14px;color:var(--text);line-height:1.6;white-space:pre-wrap;word-break:break-word;">${esc(t.text)}</div>
           <div style="display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap;">
             ${impH}${dlH}${catLabel}
             <button onclick="toggleExpand('${t.id}')" class="pill-btn" style="padding:2px 10px;font-size:11px;">
               ${t.cat?'✎ 改分類':'+ 分類'}
             </button>
+            <button onclick="editInbox('${t.id}')" class="pill-btn" style="padding:2px 10px;font-size:11px;">✎ 編輯</button>
+            <button onclick="deleteInbox('${t.id}')" class="pill-btn" style="padding:2px 10px;font-size:11px;color:var(--red);border-color:rgba(201,92,78,0.2);">🗑 刪除</button>
           </div>
         </div>
       </div>
@@ -440,12 +442,75 @@ function renderJournal(){
       row.innerHTML=`
         <span style="color:var(--green);flex-shrink:0;margin-top:2px;">✓</span>
         <div style="flex:1;min-width:0;">
-          <div style="font-size:14px;color:var(--text);line-height:1.55;word-break:break-word;">${esc(t.text)}</div>
-          <div style="display:flex;gap:8px;align-items:center;margin-top:4px;">${catB}<span style="font-size:11px;color:var(--dim);">${tm}</span></div>
+          <div id="jtxt-${t.id}" style="font-size:14px;color:var(--text);line-height:1.55;word-break:break-word;">${esc(t.text)}</div>
+          <div style="display:flex;gap:8px;align-items:center;margin-top:4px;flex-wrap:wrap;">
+            ${catB}
+            <span style="font-size:11px;color:var(--dim);">${tm}</span>
+            <button onclick="editJournal('${t.id}')" class="pill-btn" style="padding:1px 8px;font-size:11px;">✎</button>
+            <button onclick="deleteJournal('${t.id}')" class="pill-btn" style="padding:1px 8px;font-size:11px;color:var(--red);border-color:rgba(201,92,78,0.2);">🗑</button>
+          </div>
         </div>`;
       el.appendChild(row);
     });
   });
+}
+
+// ── INBOX EDIT / DELETE ──
+function deleteInbox(id){
+  tasks=tasks.filter(x=>x.id!==id);
+  save();renderMain();renderInbox();
+}
+function editInbox(id){
+  const wrap=document.getElementById(`itxt-${id}`);
+  const t=tasks.find(x=>x.id===id);
+  if(!wrap||!t)return;
+  const ta=document.createElement('textarea');
+  ta.id=`iedit-${id}`;ta.value=t.text;ta.rows=3;
+  ta.style.cssText='width:100%;background:var(--surface2);border:1px solid rgba(212,168,67,0.3);border-radius:8px;padding:8px;font-size:14px;color:var(--text);font-family:inherit;resize:none;outline:none;line-height:1.6;box-sizing:border-box;';
+  const btns=document.createElement('div');
+  btns.style.cssText='display:flex;gap:8px;margin-top:8px;';
+  btns.innerHTML=`
+    <button onclick="saveInboxEdit('${id}')" style="padding:5px 14px;border-radius:8px;background:rgba(110,168,138,0.12);border:1px solid rgba(110,168,138,0.25);color:var(--green);font-size:12px;cursor:pointer;font-family:inherit;">儲存</button>
+    <button onclick="renderInbox()" style="padding:5px 12px;border-radius:8px;background:transparent;border:1px solid var(--border);color:var(--dim);font-size:12px;cursor:pointer;font-family:inherit;">取消</button>`;
+  wrap.innerHTML='';wrap.appendChild(ta);wrap.appendChild(btns);
+  ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length);
+}
+function saveInboxEdit(id){
+  const ta=document.getElementById(`iedit-${id}`);
+  if(!ta)return;
+  const v=ta.value.trim();if(!v)return;
+  const t=tasks.find(x=>x.id===id);
+  if(t){t.text=v;save();}
+  renderInbox();renderMain();
+}
+
+// ── JOURNAL EDIT / DELETE ──
+function deleteJournal(id){
+  done=done.filter(x=>x.id!==id);
+  save();renderJournal();
+}
+function editJournal(id){
+  const wrap=document.getElementById(`jtxt-${id}`);
+  const t=done.find(x=>x.id===id);
+  if(!wrap||!t)return;
+  const ta=document.createElement('textarea');
+  ta.id=`jedit-${id}`;ta.value=t.text;ta.rows=3;
+  ta.style.cssText='width:100%;background:var(--surface2);border:1px solid rgba(212,168,67,0.3);border-radius:8px;padding:8px;font-size:13px;color:var(--text);font-family:inherit;resize:none;outline:none;line-height:1.6;box-sizing:border-box;';
+  const btns=document.createElement('div');
+  btns.style.cssText='display:flex;gap:8px;margin-top:8px;';
+  btns.innerHTML=`
+    <button onclick="saveJournalEdit('${id}')" style="padding:5px 14px;border-radius:8px;background:rgba(110,168,138,0.12);border:1px solid rgba(110,168,138,0.25);color:var(--green);font-size:12px;cursor:pointer;font-family:inherit;">儲存</button>
+    <button onclick="renderJournal()" style="padding:5px 12px;border-radius:8px;background:transparent;border:1px solid var(--border);color:var(--dim);font-size:12px;cursor:pointer;font-family:inherit;">取消</button>`;
+  wrap.innerHTML='';wrap.appendChild(ta);wrap.appendChild(btns);
+  ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length);
+}
+function saveJournalEdit(id){
+  const ta=document.getElementById(`jedit-${id}`);
+  if(!ta)return;
+  const v=ta.value.trim();if(!v)return;
+  const t=done.find(x=>x.id===id);
+  if(t){t.text=v;save();}
+  renderJournal();
 }
 
 // ── TASK ACTIONS ──
