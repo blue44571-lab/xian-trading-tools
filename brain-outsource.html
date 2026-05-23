@@ -803,7 +803,7 @@ function $(id){return document.getElementById(id);}
 async function handleLock(){
   const pwd=$('pwd1').value;
   if(!pwd){setLockErr('請輸入密碼');return;}
-  const isNew=!localStorage.getItem(SALT_K);
+  const isNew=!(localStorage.getItem(SALT_K)&&localStorage.getItem(ENC));
   $('lock-btn').disabled=true;$('lock-btn').textContent='處理中...';
   $('lock-err').textContent='';
   try{
@@ -841,7 +841,7 @@ async function handleLock(){
 function setLockErr(msg){
   $('lock-err').textContent=msg;
   $('lock-btn').disabled=false;
-  $('lock-btn').textContent=localStorage.getItem(SALT_K)?'解鎖':'設定密碼';
+  $('lock-btn').textContent=(localStorage.getItem(SALT_K)&&localStorage.getItem(ENC))?'解鎖':'設定密碼';
 }
 function unlockApp(){
   $('lock-screen').style.display='none';
@@ -858,8 +858,11 @@ function confirmReset(){
 // ── INIT ──
 (async function(){
   updateT();
-  const isNew=!localStorage.getItem(SALT_K);
-  if(isNew){
+  // 必須同時有 salt 和加密資料才算「已設定密碼」，否則視為全新
+  const hasSetup = localStorage.getItem(SALT_K) && localStorage.getItem(ENC);
+  if(!hasSetup){
+    // 清除任何殘留的 salt（避免舊測試留下的鹽值卡住設定流程）
+    localStorage.removeItem(SALT_K);
     $('lock-icon').textContent='🔐';
     $('lock-sub').textContent='歡迎！請設定您的密碼（至少 4 個字元）';
     $('lock-btn').textContent='設定密碼';
