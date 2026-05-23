@@ -4,6 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>大腦外包系統</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0f0e17">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="大腦外包">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&display=swap" rel="stylesheet">
   <style>
     :root {
@@ -758,6 +763,7 @@ function toggleTimer2(){
     $('t-start').textContent='▶ 繼續';$('t-label').textContent='暫停中';
   } else {
     if(tRem===0)resetTimer();
+    askNotifyPermission(); // 開始時索取通知權限
     tRunning=true;$('t-start').textContent='⏸ 暫停';$('t-label').textContent='專注中';
     tInterval=setInterval(()=>{
       tRem--;updateT();
@@ -765,6 +771,7 @@ function toggleTimer2(){
         clearInterval(tInterval);tInterval=null;tRunning=false;
         $('t-start').textContent='▶ 再來一次';$('t-label').textContent='完成！';
         bell();
+        sendTimerNotify(Math.round(tTotal/60));
       }
     },1000);
   }
@@ -793,6 +800,26 @@ function bell(){
       g.gain.linearRampToValueAtTime(0.22,ctx.currentTime+d+0.01);
       g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+d+1.1);
       o.start(ctx.currentTime+d);o.stop(ctx.currentTime+d+1.1);
+    });
+  }catch(e){}
+}
+
+// ── NOTIFICATIONS ──
+async function askNotifyPermission(){
+  if(!('Notification' in window))return;
+  if(Notification.permission==='default') await Notification.requestPermission();
+}
+function sendTimerNotify(mins){
+  // 震動（Android）
+  try{ if('vibrate' in navigator) navigator.vibrate([300,100,300,100,600]); }catch(e){}
+  // 通知
+  if(Notification.permission!=='granted')return;
+  try{
+    new Notification('🍅 番茄鐘完成！',{
+      body:`${mins} 分鐘結束了，好好休息一下 ☕`,
+      tag:'pomodoro',
+      renotify:true,
+      silent:false
     });
   }catch(e){}
 }
@@ -870,6 +897,11 @@ function confirmReset(){
     $('confirm-wrap').style.display='';
   }
   $('pwd1').focus();
+
+  // 註冊 Service Worker（PWA 安裝支援）
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
+  }
 })();
 </script>
 </body>
