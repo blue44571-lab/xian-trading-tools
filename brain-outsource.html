@@ -191,6 +191,34 @@
 </head>
 <body>
 
+<!-- LOCK SCREEN -->
+<div id="lock-screen" style="position:fixed;inset:0;background:var(--bg);z-index:200;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px;">
+  <div style="text-align:center;margin-bottom:32px;">
+    <div id="lock-icon" style="font-size:42px;margin-bottom:12px;">🔒</div>
+    <div style="font-size:17px;font-weight:700;color:#ede9e0;">大腦外包系統</div>
+    <div id="lock-sub" style="font-size:12px;color:var(--dim);margin-top:6px;">輸入密碼繼續</div>
+  </div>
+  <div style="width:100%;max-width:300px;">
+    <input type="password" id="pwd1" placeholder="密碼" autocomplete="current-password"
+      style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 18px;font-size:15px;color:var(--text);font-family:inherit;outline:none;margin-bottom:10px;box-sizing:border-box;transition:border-color 0.2s;"
+      onkeydown="if(event.key==='Enter')handleLock()">
+    <div id="confirm-wrap" style="display:none;">
+      <input type="password" id="pwd2" placeholder="再次確認密碼" autocomplete="new-password"
+        style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 18px;font-size:15px;color:var(--text);font-family:inherit;outline:none;margin-bottom:10px;box-sizing:border-box;transition:border-color 0.2s;"
+        onkeydown="if(event.key==='Enter')handleLock()">
+    </div>
+    <div id="lock-err" style="font-size:12px;color:var(--red);min-height:18px;margin-bottom:10px;text-align:center;"></div>
+    <button id="lock-btn" onclick="handleLock()"
+      style="width:100%;padding:13px;border-radius:12px;background:var(--gold);color:#1a1509;font-size:14px;font-weight:700;border:none;cursor:pointer;font-family:inherit;margin-bottom:16px;">
+      解鎖
+    </button>
+    <button id="reset-btn" onclick="confirmReset()"
+      style="display:none;width:100%;padding:8px;border-radius:10px;background:transparent;border:1px solid rgba(201,92,78,0.18);color:var(--red);font-size:12px;cursor:pointer;font-family:inherit;">
+      忘記密碼（清除全部資料重設）
+    </button>
+  </div>
+</div>
+
 <!-- BACKDROP -->
 <div id="backdrop" onclick="closeSheets()"></div>
 
@@ -335,17 +363,33 @@
 
 <script>
 // ── DATA ──
-const TK = 'bov2-tasks', DK = 'bov2-done';
+const ENC='brain-enc-v1', SALT_K='brain-salt-v1';
 let tasks=[], done=[], curImp='normal', dlOn=false;
+let _key=null; // AES-GCM key，解鎖後設定
 
-function load(){
-  try{tasks=JSON.parse(localStorage.getItem(TK)||'[]');}catch{tasks=[];}
-  try{done =JSON.parse(localStorage.getItem(DK)||'[]');}catch{done=[];}
+// ── CRYPTO ──
+async function _deriveKey(pwd, salt){
+  const km=await crypto.subtle.importKey('raw',new TextEncoder().encode(pwd),{name:'PBKDF2'},false,['deriveKey']);
+  return crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:100000,hash:'SHA-256'},km,{name:'AES-GCM',length:256},false,['encrypt','decrypt']);
 }
-function save(){
-  localStorage.setItem(TK,JSON.stringify(tasks));
-  localStorage.setItem(DK,JSON.stringify(done));
+async function _enc(key,obj){
+  const iv=crypto.getRandomValues(new Uint8Array(12));
+  const buf=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,new TextEncoder().encode(JSON.stringify(obj)));
+  const out=new Uint8Array(12+buf.byteLength);out.set(iv);out.set(new Uint8Array(buf),12);
+  return btoa(String.fromCharCode(...out));
 }
+async function _dec(key,b64){
+  const b=Uint8Array.from(atob(b64),c=>c.charCodeAt(0));
+  const buf=await crypto.subtle.decrypt({name:'AES-GCM',iv:b.slice(0,12)},key,b.slice(12));
+  return JSON.parse(new TextDecoder().decode(buf));
+}
+
+function save(){_saveAsync();}
+async function _saveAsync(){
+  if(!_key)return;
+  localStorage.setItem(ENC,await _enc(_key,{tasks,done}));
+}
+
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
 function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML;}
 
@@ -755,35 +799,76 @@ function bell(){
 // ── UTIL ──
 function $(id){return document.getElementById(id);}
 
-// ── MIGRATE v1 → v2 ──
-function migrateV1(){
-  const OLD='brain-outsource-v1';
-  const raw=localStorage.getItem(OLD);
-  if(!raw)return;
+// ── LOCK SCREEN ──
+async function handleLock(){
+  const pwd=$('pwd1').value;
+  if(!pwd){setLockErr('請輸入密碼');return;}
+  const isNew=!localStorage.getItem(SALT_K);
+  $('lock-btn').disabled=true;$('lock-btn').textContent='處理中...';
+  $('lock-err').textContent='';
   try{
-    const old=JSON.parse(raw)||[];
-    if(!old.length)return;
-    // 只在 v2 是空的時才搬（避免覆蓋新資料）
-    const existing=JSON.parse(localStorage.getItem(TK)||'[]');
-    if(!existing.length){
-      // 補上 v2 需要的欄位
-      tasks=old.map(t=>({
-        id:t.id||uid(),
-        text:t.text||'',
-        imp:t.importance||'normal',
-        dl:t.deadline||null,
-        cat:t.category||null,
-        createdAt:t.createdAt||t.at||Date.now()
-      }));
-      save();
-      localStorage.removeItem(OLD);
+    if(isNew){
+      // 設定新密碼
+      if(pwd.length<4){setLockErr('密碼至少 4 個字元');return;}
+      const pwd2=$('pwd2').value;
+      if(pwd!==pwd2){setLockErr('兩次密碼不一致');return;}
+      const salt=crypto.getRandomValues(new Uint8Array(16));
+      localStorage.setItem(SALT_K,btoa(String.fromCharCode(...salt)));
+      _key=await _deriveKey(pwd,salt);
+      // 搬移舊的未加密資料
+      const _normT=t=>({id:t.id||uid(),text:t.text||'',imp:t.importance||t.imp||'normal',dl:t.deadline||t.dl||null,cat:t.category||t.cat||null,createdAt:t.createdAt||t.at||Date.now()});
+      ['bov2-tasks','brain-outsource-v1'].forEach(k=>{
+        try{const r=localStorage.getItem(k);if(r){tasks=[...tasks,...JSON.parse(r).map(_normT)];localStorage.removeItem(k);}}catch(e){}
+      });
+      ['bov2-done'].forEach(k=>{
+        try{const r=localStorage.getItem(k);if(r){done=[...done,...JSON.parse(r)];localStorage.removeItem(k);}}catch(e){}
+      });
+      await _saveAsync();
+      unlockApp();
+    } else {
+      // 驗證密碼並解密
+      const salt=Uint8Array.from(atob(localStorage.getItem(SALT_K)),c=>c.charCodeAt(0));
+      _key=await _deriveKey(pwd,salt);
+      const enc=localStorage.getItem(ENC);
+      if(enc){const d=await _dec(_key,enc);tasks=d.tasks||[];done=d.done||[];}
+      unlockApp();
     }
-  }catch(e){}
+  }catch(e){
+    _key=null;
+    setLockErr(isNew?'設定失敗，請再試一次':'密碼錯誤，請再試一次');
+  }
+}
+function setLockErr(msg){
+  $('lock-err').textContent=msg;
+  $('lock-btn').disabled=false;
+  $('lock-btn').textContent=localStorage.getItem(SALT_K)?'解鎖':'設定密碼';
+}
+function unlockApp(){
+  $('lock-screen').style.display='none';
+  renderMain();updateT();
+  $('brain-input').focus();
+}
+function confirmReset(){
+  if(confirm('⚠ 確定要清除全部資料並重設密碼嗎？\n\n此操作無法復原，所有任務與日誌將永久刪除。')){
+    [ENC,SALT_K,'bov2-tasks','bov2-done','brain-outsource-v1'].forEach(k=>localStorage.removeItem(k));
+    location.reload();
+  }
 }
 
 // ── INIT ──
-migrateV1();load();renderMain();updateT();
-$('brain-input').focus();
+(async function(){
+  updateT();
+  const isNew=!localStorage.getItem(SALT_K);
+  if(isNew){
+    $('lock-icon').textContent='🔐';
+    $('lock-sub').textContent='歡迎！請設定您的密碼（至少 4 個字元）';
+    $('lock-btn').textContent='設定密碼';
+    $('confirm-wrap').style.display='';
+  } else {
+    $('reset-btn').style.display='';
+  }
+  $('pwd1').focus();
+})();
 </script>
 </body>
 </html>
